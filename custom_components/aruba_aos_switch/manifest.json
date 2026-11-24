@@ -1,1 +1,20 @@
-{"domain":"aruba_aos_switch","name":"ArubaOS-Switch REST","categories":["computers_network.routers_network"],"codeowners":["@crivchri"],"config_flow":true,"documentation":"https://github.com/crivchri/ha-aruba-aos-switch","integration_type":"device","iot_class":"local_polling","issue_tracker":"https://github.com/crivchri/ha-aruba-aos-switch/issues","loggers":["custom_components.aruba_aos_switch"],"requirements":[],"version":"1.0.0"}
+{
+    "domain": "aruba_aos_switch",
+    "name": "ArubaOS-Switch REST",
+    "categories": [
+        "computers_network.routers_network"
+    ],
+    "codeowners": [
+        "@crivchri"
+    ],
+    "config_flow": true,
+    "documentation": "https://github.com/crivchri/ha-aruba-aos-switch",
+    "integration_type": "device",
+    "iot_class": "local_polling",
+    "issue_tracker": "https://github.com/crivchri/ha-aruba-aos-switch/issues",
+    "loggers": [
+        "custom_components.aruba_aos_switch"
+    ],
+    "requirements": [],
+    "version": "1.0.0"
+}
