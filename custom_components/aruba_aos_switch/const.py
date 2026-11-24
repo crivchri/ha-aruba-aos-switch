@@ -1,0 +1,12 @@
+DOMAIN = "aruba_aos_switch"
+PLATFORMS = ["switch", "binary_sensor"]
+CONF_API_VERSION = "api_version"
+CONF_VERIFY_SSL = "verify_ssl"
+CONF_SCAN_INTERVAL = "scan_interval"
+CONF_EXCLUDED_PORTS = "excluded_ports"
+DEFAULT_API_VERSION = "v4"
+DEFAULT_SCAN_INTERVAL = 15
+DEFAULT_VERIFY_SSL = True
+MIN_SCAN_INTERVAL = 10
+MAX_SCAN_INTERVAL = 300
+ATTR_PORT_ID = "port_id"
