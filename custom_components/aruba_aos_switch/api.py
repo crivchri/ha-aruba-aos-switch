@@ -1,25 +1,31 @@
 from __future__ import annotations
+
 import asyncio
 import logging
 import base64
 import re
+
 from typing import Any
 from aiohttp import ClientError, ClientResponse, ClientSession, ClientTimeout
 from .exceptions import ArubaAuthError, ArubaConnectionError, ArubaProtocolError, ArubaRateLimitError
 from .models import ArubaData, ArubaPort, ArubaSystem
+
 _LOGGER=logging.getLogger(__name__)
+
 class ArubaApiClient:
     """Async ArubaOS-S REST client with one shared HA session and serialized login."""
     def __init__(self, host: str, username: str, password: str, api_version: str, session: ClientSession, verify_ssl: bool=True) -> None:
         self.host=host.strip().rstrip('/'); self.username=username; self.password=password
         self.api_version=api_version.strip('/'); self.session=session; self.verify_ssl=verify_ssl
         self.base_url=f"https://{self.host}/rest"; self._login_lock=asyncio.Lock(); self._write_lock=asyncio.Lock()
-        self._authenticated=False; self._system: ArubaSystem | None=None; self.timeout=ClientTimeout(total=12,connect=5,sock_read=8)
+        self._authenticated=False; self._cookie: str | None; self._system: ArubaSystem | None=None; self.timeout=ClientTimeout(total=12,connect=5,sock_read=8)
+    
     async def _json(self,response: ClientResponse)->dict[str,Any]:
         try: data=await response.json(content_type=None)
         except (ValueError,ClientError) as err: raise ArubaProtocolError(f"Invalid JSON (HTTP {response.status})") from err
         if not isinstance(data,dict): raise ArubaProtocolError("JSON root is not an object")
         return data
+    
     async def async_login(self, force: bool=False)->None:
         async with self._login_lock:
             if self._authenticated and not force: return
@@ -29,16 +35,31 @@ class ArubaApiClient:
                     if response.status>=400: raise ArubaConnectionError(f"Login failed: HTTP {response.status}")
                     data=await self._json(response)
                     cookie=data.get("cookie")
-                    if cookie and "=" in str(cookie):
-                        name,value=str(cookie).split("=",1)
-                        self.session.cookie_jar.update_cookies({name:value})
+                    if not cookie or "=" not in str(cookie):
+                        raise ArubaProtocolError(
+                            "Login response did not contain a valid session cookie"
+                        )
+                    self._cookie = str(cookie)
                     self._authenticated=True
             except ArubaAuthError: raise
             except (ClientError,asyncio.TimeoutError) as err: raise ArubaConnectionError(str(err)) from err
+    
     async def _request(self,method: str,path: str,body: dict[str,Any]|None=None,retry_auth: bool=True)->dict[str,Any]:
         await self.async_login()
         try:
-            async with self.session.request(method,f"{self.base_url}/{path.lstrip('/')}",json=body,ssl=self.verify_ssl,timeout=self.timeout) as response:
+            headers = {}
+
+            if self._cookie:
+                headers["Cookie"] = self._cookie
+            
+            async with self.session.request(
+                method,
+                f"{self.base_url}/{path.lstrip('/')}",
+                json=body,
+                headers=headers,
+                ssl=self.verify_ssl,
+                timeout=self.timeout
+            ) as response:
                 if response.status in (401,403):
                     self._authenticated=False
                     if retry_auth:
@@ -55,6 +76,7 @@ class ArubaApiClient:
                 return await self._json(response)
         except (ArubaAuthError,ArubaRateLimitError,ArubaProtocolError): raise
         except (ClientError,asyncio.TimeoutError) as err: raise ArubaConnectionError(str(err)) from err
+    
     async def async_get_firmware_info(self) -> str:
         """Get firmware information using the AOS-S AnyCLI REST API."""
         data = await self._request(
@@ -115,6 +137,7 @@ class ArubaApiClient:
             "boot_image": boot_image,
             "boot_rom_version": boot_rom_version,
         }
+    
     async def async_get_system(self, refresh: bool=False)->ArubaSystem:
         if self._system is not None and not refresh: return self._system
         data=await self._request("GET",f"{self.api_version}/system")
@@ -137,6 +160,7 @@ class ArubaApiClient:
             firmware_info["boot_rom_version"]
         )
         return self._system
+    
     @staticmethod
     def _bool(value: Any)->bool|None:
         if isinstance(value,bool): return value
@@ -146,6 +170,7 @@ class ArubaApiClient:
             if value in {"true","up","enabled","active","1"}: return True
             if value in {"false","down","disabled","inactive","0"}: return False
         return None
+    
     async def async_get_data(self)->ArubaData:
         system, payload=await asyncio.gather(self.async_get_system(),self._request("GET",f"{self.api_version}/ports"))
         ports={}
@@ -156,9 +181,41 @@ class ArubaApiClient:
             ports[pid]=ArubaPort(pid,str(item.get("name") or f"Port {pid}"),self._bool(item.get("is_port_enabled")),link,item.get("config_mode"),item.get("trunk_mode"),item.get("lacp_status"),item.get("trunk_group"),item)
         if not ports: raise ArubaProtocolError("No ports returned by the switch")
         return ArubaData(system,ports)
+    
     async def async_set_port(self,port_id: str,enabled: bool)->None:
         async with self._write_lock:
             await self._request("PUT",f"{self.api_version}/ports/{port_id}",{"id":str(port_id),"is_port_enabled":bool(enabled)})
+    
     async def async_close(self)->None:
-        """Shared HA session is owned by Home Assistant; only clear local state."""
-        self._authenticated=False; self._system=None
+        """Log out from the switch and release local session state."""
+        cookie = self._cookie
+
+        # Prevent further requests from using this session.
+        self._authenticated = False
+        self._cookie = None
+        self._system = None
+        
+        if not cookie:
+            return
+        
+        try:
+            async with self.session.delete(
+                f"{self.base_url}/v1/login-sessions",
+                headers={"Cookie": cookie},
+                ssl=self.verify_ssl,
+                timeout=self.timeout,
+            ) as response:
+                if response.status not in (200, 204):
+                    _LOGGER.debug(
+                        "Aruba logout returned HTTP %s for %s",
+                        response.status,
+                        self.host,
+                    )
+
+        except (ClientError, asyncio.TimeoutError):
+            _LOGGER.debug(
+                "Unable to log out from Aruba switch %s; "
+                "the remote session will expire naturally",
+                self.host,
+            )
+        
