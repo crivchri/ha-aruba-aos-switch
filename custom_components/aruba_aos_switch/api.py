@@ -55,8 +55,8 @@ class ArubaApiClient:
                 return await self._json(response)
         except (ArubaAuthError,ArubaRateLimitError,ArubaProtocolError): raise
         except (ClientError,asyncio.TimeoutError) as err: raise ArubaConnectionError(str(err)) from err
-    async def async_get_firmware_version(self) -> str:
-        """Get firmware version using the AOS-S AnyCLI REST endpoint."""
+    async def async_get_firmware_info(self) -> str:
+        """Get firmware information using the AOS-S AnyCLI REST API."""
         data = await self._request(
             "POST",
             f"{self.api_version}/cli",
@@ -83,21 +83,42 @@ class ArubaApiClient:
                 "Unable to decode show version output"
             ) from err
 
-        match = re.search(
-            r"(?m)^\s*((?:YA|YB)\.\d{2}\.\d{2}\.\d{4})\s*$",
-            output,
+        def extract(pattern: str) -> str:
+            match = re.search(pattern, output, re.MULTILINE)
+            return match.group(1).strip() if match else ""
+
+        firmware = extract(
+            r"^\s*((?:YA|YB)\.\d{2}\.\d{2}\.\d{4})\s*$"
         )
 
-        if not match:
+        image_datetime = extract(
+            r"^\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+            r"\s+\d{1,2}\s+\d{4}\s+\d{2}:\d{2}:\d{2})\s*$"
+        )
+
+        boot_image = extract(
+            r"^\s*Boot Image:\s*(\S+)"
+        )
+
+        boot_rom_version = extract(
+            r"^\s*Boot ROM Version:\s*(\S+)"
+        )
+
+        if not firmware:
             raise ArubaProtocolError(
                 f"Could not extract firmware version from show version: {output}"
             )
 
-        return match.group(1)
+        return {
+            "firmware": firmware,
+            "image_datetime": image_datetime,
+            "boot_image": boot_image,
+            "boot_rom_version": boot_rom_version,
+        }
     async def async_get_system(self, refresh: bool=False)->ArubaSystem:
         if self._system is not None and not refresh: return self._system
         data=await self._request("GET",f"{self.api_version}/system")
-        firmware=await self.async_get_firmware_version()
+        firmware_info=await self.async_get_firmware_info()
         self._system=ArubaSystem(
             str(data.get("name") or self.host),
             str(
@@ -110,7 +131,11 @@ class ArubaApiClient:
                 or data.get("serial")
                 or self.host
             ),
-            str(firmware))
+            firmware_info["firmware"],
+            firmware_info["image_datetime"],
+            firmware_info["boot_image"],
+            firmware_info["boot_rom_version"]
+        )
         return self._system
     @staticmethod
     def _bool(value: Any)->bool|None:

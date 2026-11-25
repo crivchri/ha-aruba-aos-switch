@@ -53,3 +53,14 @@ class ArubaFirmwareSensor(
                 f"https://{self.coordinator.client.host}"
             ),
         )
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Return additional firmware information."""
+        system = self.coordinator.data.system
+
+        return {
+            "image_datetime": system.image_datetime,
+            "boot_image": system.boot_image,
+            "boot_rom_version": system.boot_rom_version,
+        }

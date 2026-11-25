@@ -6,6 +6,9 @@ class ArubaSystem:
     model: str
     serial: str
     firmware: str
+    image_datetime: str = ""
+    boot_image: str = ""
+    boot_rom_version: str = ""
 @dataclass(frozen=True, slots=True)
 class ArubaPort:
     port_id: str
