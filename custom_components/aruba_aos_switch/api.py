@@ -1,6 +1,8 @@
 from __future__ import annotations
 import asyncio
 import logging
+import base64
+import re
 from typing import Any
 from aiohttp import ClientError, ClientResponse, ClientSession, ClientTimeout
 from .exceptions import ArubaAuthError, ArubaConnectionError, ArubaProtocolError, ArubaRateLimitError
@@ -53,16 +55,49 @@ class ArubaApiClient:
                 return await self._json(response)
         except (ArubaAuthError,ArubaRateLimitError,ArubaProtocolError): raise
         except (ClientError,asyncio.TimeoutError) as err: raise ArubaConnectionError(str(err)) from err
+    async def async_get_firmware_version(self) -> str:
+        """Get firmware version using the AOS-S AnyCLI REST endpoint."""
+        data = await self._request(
+            "POST",
+            f"{self.api_version}/cli",
+            {"cmd": "show version"},
+        )
+
+        if data.get("status") != "CCS_SUCCESS":
+            raise ArubaProtocolError(
+                f"show version failed: {data.get('error_msg', 'Unknown error')}"
+            )
+
+        encoded = data.get("result_base64_encoded")
+        if not encoded:
+            raise ArubaProtocolError(
+                "show version returned no CLI output"
+            )
+
+        try:
+            output = base64.b64decode(encoded).decode(
+                "utf-8", errors="replace"
+            )
+        except (ValueError, TypeError) as err:
+            raise ArubaProtocolError(
+                "Unable to decode show version output"
+            ) from err
+
+        match = re.search(
+            r"(?m)^\s*((?:YA|YB)\.\d{2}\.\d{2}\.\d{4})\s*$",
+            output,
+        )
+
+        if not match:
+            raise ArubaProtocolError(
+                f"Could not extract firmware version from show version: {output}"
+            )
+
+        return match.group(1)
     async def async_get_system(self, refresh: bool=False)->ArubaSystem:
         if self._system is not None and not refresh: return self._system
         data=await self._request("GET",f"{self.api_version}/system")
-        firmware=(
-            data.get("software_version")
-            or data.get("software_revision")
-            or data.get("firmware_version")
-            or data.get("firmware")
-            or "unknown"
-        )
+        firmware=await self.async_get_firmware_version()
         self._system=ArubaSystem(
             str(data.get("name") or self.host),
             str(

@@ -36,8 +36,8 @@ class ArubaFirmwareSensor(
         )
 
     @property
-    def native_value(self) -> str:
-        return self.coordinator.data.system.firmware
+    def native_value(self) -> str | None:
+        return self.coordinator.data.system.firmware or None
 
     @property
     def device_info(self) -> DeviceInfo:
