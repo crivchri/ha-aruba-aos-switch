@@ -1,5 +1,5 @@
 DOMAIN = "aruba_aos_switch"
-PLATFORMS = ["switch", "binary_sensor"]
+PLATFORMS = ["switch", "binary_sensor", "sensor"]
 CONF_API_VERSION = "api_version"
 CONF_VERIFY_SSL = "verify_ssl"
 CONF_SCAN_INTERVAL = "scan_interval"

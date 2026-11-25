@@ -56,7 +56,26 @@ class ArubaApiClient:
     async def async_get_system(self, refresh: bool=False)->ArubaSystem:
         if self._system is not None and not refresh: return self._system
         data=await self._request("GET",f"{self.api_version}/system")
-        self._system=ArubaSystem(str(data.get("name") or self.host),str(data.get("product_name") or data.get("model") or "ArubaOS-Switch"),str(data.get("serial_number") or data.get("serial") or self.host),str(data.get("software_version") or data.get("firmware_version") or "unknown"))
+        firmware=(
+            data.get("software_version")
+            or data.get("software_revision")
+            or data.get("firmware_version")
+            or data.get("firmware")
+            or "unknown"
+        )
+        self._system=ArubaSystem(
+            str(data.get("name") or self.host),
+            str(
+                data.get("product_name")
+                or data.get("model")
+                or "ArubaOS-Switch"
+            ),
+            str(
+                data.get("serial_number")
+                or data.get("serial")
+                or self.host
+            ),
+            str(firmware))
         return self._system
     @staticmethod
     def _bool(value: Any)->bool|None:

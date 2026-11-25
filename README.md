@@ -12,6 +12,7 @@ Custom Home Assistant integration for HPE ArubaOS-Switch 16.x, tested conceptual
 - Optimistic cache update after writes, immediately followed by authoritative refresh
 - Diagnostics with credentials and session data redacted
 - Configurable polling interval (10-300 seconds) and excluded ports
+- Firmware version sensor and also displayed in Home Assistant device information
 
 ## Switch prerequisites
 ```text
@@ -39,6 +40,8 @@ Copy `custom_components/aruba_aos_switch` to `/config/custom_components/` and re
 - Verify TLS: recommended with a certificate trusted by the HA host
 - Polling: default 15 seconds; use 30-60 seconds for larger installations
 - Excluded ports: e.g. `47,48` for uplinks
+
+The integration retrieves the firmware version from the system information returned by the ArubaOS-Switch REST API.
 
 ## Safety
 Exclude HA's own uplink, trunks, LACP members, firewall/router ports and any management path. Disabling these can isolate Home Assistant.
